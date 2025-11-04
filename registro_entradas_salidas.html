@@ -1,0 +1,298 @@
+<!DOCTYPE html> 
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Registro de Entrada y Salida (Seguro)</title>
+<style>
+  :root{ --navy:#07223a; --navy-2:#0b2545; --accent:#4A90E2; --green:#28a745; --red:#dc3545; --muted:#d7e6f4; }
+  body{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(180deg,#021726 0%,#07223a 100%); margin:0; padding:28px; color:var(--muted); min-height:100vh; display:flex; justify-content:center; }
+  .container{ width:100%; max-width:880px; background:var(--navy-2); padding:22px; border-radius:14px; box-shadow:0 10px 32px rgba(0,0,0,0.45); color:#eaf4ff }
+  h1{ margin:0 0 14px 0 }
+  label{ display:block; margin-bottom:6px; font-weight:700; color:#dff0ff }
+  input[type=text], textarea{ width:100%; padding:12px 14px; border-radius:10px; border:2px solid rgba(255,255,255,0.06); background:rgba(255,255,255,0.03); color:var(--muted); margin-bottom:12px }
+  .buttons{ display:flex; gap:12px; margin-bottom:14px }
+  button{ flex:1; padding:12px; border-radius:10px; border:none; font-weight:800; cursor:pointer; color:white }
+  #entradaBtn{ background:linear-gradient(180deg,var(--green),#1f7a36) }
+  #salidaBtn{ background:linear-gradient(180deg,var(--red),#b2212a) }
+  #exportBtn{ background:linear-gradient(180deg,var(--accent),#2b78c7); width:100%; margin-bottom:12px }
+  #searchInput{ padding:10px 12px; border-radius:8px; border:2px solid rgba(255,255,255,0.05); background:rgba(255,255,255,0.03); color:var(--muted) }
+  table{ width:100%; border-collapse:collapse; margin-top:10px }
+  thead th{ background:rgba(0,0,0,0.2); padding:10px; font-weight:800 }
+  th, td{ padding:8px 10px; border-bottom:1px solid rgba(255,255,255,0.04); text-align:center; font-size:0.95rem }
+  td.left{ text-align:left }
+  .small{ font-size:0.85rem; color:rgba(255,255,255,0.75) }
+  .icon-btn{ padding:6px 8px; border-radius:8px; margin:0 4px; cursor:pointer; border:none }
+  .edit-btn{ background:#ffb74d; color:#022 }
+  .del-btn{ background:#ef5350 }
+  .clear-btn{ background:#6b4bd6 }
+  @media(max-width:720px){ .buttons{ flex-direction:column } }
+  /* modal */
+  .modal{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,0.5) }
+  .modal.active{ display:flex }
+  .modal-content{ background:var(--navy-2); padding:18px; border-radius:10px; width:320px }
+  .modal-content h3{ margin-top:0 }
+  .note{ font-size:0.85rem; color:rgba(255,255,255,0.7) }
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1>Paragon Financial Corp.</h1>
+
+    <label for="codigoInput">Código único (5 dígitos)</label>
+    <input type="text" id="codigoInput" maxlength="5" placeholder="Ej: 01234" autocomplete="off" />
+
+    <label for="obsInput">Observaciones</label>
+    <textarea id="obsInput" placeholder="Escribe aquí alguna observación..."></textarea>
+
+    <div class="buttons">
+      <button id="entradaBtn" disabled>ENTRADA</button>
+      <button id="salidaBtn" disabled>SALIDA</button>
+    </div>
+
+    <div style="display:flex; gap:8px; margin-bottom:12px">
+      <input type="text" id="searchInput" placeholder="Buscar por código o fecha (YYYY-MM-DD)" />
+      <button id="exportBtn">Exportar Ahora (XLSX/CSV)</button>
+    </div>
+
+    <div style="display:flex; gap:8px; margin-bottom:8px">
+      <button id="clearAllBtn" class="clear-btn">Borrar TODO (requiere admin)</button>
+      <span class="small" style="align-self:center">*Borrar o editar requiere código admin</span>
+    </div>
+
+    <table aria-label="Historial">
+      <thead>
+        <tr><th>Código</th><th>Tipo</th><th>Fecha</th><th>Hora</th><th>Observaciones</th><th>Acciones</th></tr>
+      </thead>
+      <tbody id="registroTableBody"></tbody>
+    </table>
+  </div>
+
+<!-- Modal para pedir código admin -->
+<div id="adminModal" class="modal" role="dialog" aria-modal="true">
+  <div class="modal-content">
+    <h3>Acceso Administrador</h3>
+    <p class="note">Introduce el código de 4 dígitos para permitir editar o borrar registros.</p>
+    <input type="password" id="adminCodeInput" maxlength="4" placeholder="Código admin" />
+    <div style="display:flex; gap:8px; margin-top:12px;">
+      <button id="adminAcceptBtn" style="background-color:#28a745; color:#fff; border:none; border-radius:6px; padding:8px 16px; cursor:pointer;">Aceptar</button>
+      <button id="adminCancelBtn" style="background-color:#dc3545; color:#fff; border:none; border-radius:6px; padding:8px 16px; cursor:pointer;">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- CONFIGURACIÓN ---
+const ADMIN_CODE = '1101'; // código de 4 dígitos requerido para borrar/editar
+// --- Elementos ---
+const codigoInput = document.getElementById('codigoInput');
+const obsInput = document.getElementById('obsInput');
+const entradaBtn = document.getElementById('entradaBtn');
+const salidaBtn = document.getElementById('salidaBtn');
+const registroTableBody = document.getElementById('registroTableBody');
+const exportBtn = document.getElementById('exportBtn');
+const searchInput = document.getElementById('searchInput');
+const clearAllBtn = document.getElementById('clearAllBtn');
+
+// Modal admin
+const adminModal = document.getElementById('adminModal');
+const adminCodeInput = document.getElementById('adminCodeInput');
+const adminAcceptBtn = document.getElementById('adminAcceptBtn');
+const adminCancelBtn = document.getElementById('adminCancelBtn');
+
+let adminCallback = null; // función a ejecutar si admin acepta
+
+// --- Validaciones ---
+function validarCodigo(){
+  const val = codigoInput.value.trim();
+  const regex = /^\d{5}$/; // exactamente 5 dígitos
+  return regex.test(val);
+}
+function actualizarBotones(){
+  const ok = validarCodigo();
+  entradaBtn.disabled = !ok;
+  salidaBtn.disabled = !ok;
+}
+codigoInput.addEventListener('input', ()=>{
+  codigoInput.value = codigoInput.value.replace(/[^0-9]/g,'').slice(0,5);
+  actualizarBotones();
+});
+
+// --- Gestión de registros en localStorage ---
+function cargarRegistros(){
+  const datos = localStorage.getItem('registroEntradasSalidas');
+  return datos ? JSON.parse(datos) : [];
+}
+function guardarRegistros(registros){
+  localStorage.setItem('registroEntradasSalidas', JSON.stringify(registros));
+}
+
+// formato fecha/hora
+function obtenerFechaHora(){
+  const ahora = new Date();
+  const fecha = ahora.toLocaleDateString('sv-SE');
+  const hora = ahora.toTimeString().slice(0,8);
+  return {fecha, hora};
+}
+
+// agregar
+function agregarRegistro(codigo,tipo,observacion){
+  const {fecha,hora} = obtenerFechaHora();
+  const registros = cargarRegistros();
+  // id único local para operaciones (timestamp + random)
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+  registros.push({id,codigo,tipo,fecha,hora,observacion});
+  guardarRegistros(registros);
+  mostrarRegistros(registros);
+  // Se ELIMINÓ la auto-exportación para que NO descargue automáticamente
+}
+
+// mostrar
+function mostrarRegistros(registros){
+  registroTableBody.innerHTML = '';
+  registros.forEach(r=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${r.codigo}</td>
+      <td>${r.tipo}</td>
+      <td>${r.fecha}</td>
+      <td>${r.hora}</td>
+      <td class="left">${escapeHtml(r.observacion || '')}</td>
+      <td>
+        <button class="icon-btn edit-btn" data-id="${r.id}" title="Editar">Editar</button>
+        <button class="icon-btn del-btn" data-id="${r.id}" title="Borrar">Borrar</button>
+      </td>
+    `;
+    registroTableBody.appendChild(tr);
+  });
+  // enlazar eventos de acciones
+  document.querySelectorAll('.del-btn').forEach(b=> b.addEventListener('click', onDeleteClick));
+  document.querySelectorAll('.edit-btn').forEach(b=> b.addEventListener('click', onEditClick));
+}
+
+// escape HTML en observaciones para evitar inyección visual
+function escapeHtml(str){ return (str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// borrar por id (requiere admin)
+function onDeleteClick(e){
+  const id = e.currentTarget.getAttribute('data-id');
+  pedirAdmin((ok)=>{ if(ok){ borrarRegistro(id); } else { alert('Código admin incorrecto.'); } });
+}
+function borrarRegistro(id){
+  let regs = cargarRegistros();
+  regs = regs.filter(r=> r.id !== id);
+  guardarRegistros(regs);
+  mostrarRegistros(regs);
+  // Se ELIMINÓ la auto-exportación para que NO descargue automáticamente
+}
+
+// editar por id (requiere admin)
+function onEditClick(e){
+  const id = e.currentTarget.getAttribute('data-id');
+  pedirAdmin((ok)=>{ if(ok){ iniciarEdicion(id); } else { alert('Código admin incorrecto.'); } });
+}
+function iniciarEdicion(id){
+  const regs = cargarRegistros();
+  const item = regs.find(r=> r.id === id);
+  if(!item) return alert('Registro no encontrado');
+  // pedir nuevos valores (simple prompt, puedes mejorar con modal si quieres)
+  const nuevoObs = prompt('Nueva observación:', item.observacion || '');
+  if(nuevoObs === null) return; // cancelar
+  const nuevoTipo = prompt('Tipo (Entrada/Salida):', item.tipo);
+  if(!nuevoTipo) return;
+  item.observacion = nuevoObs.trim();
+  item.tipo = (nuevoTipo.trim().toLowerCase().startsWith('e')) ? 'Entrada' : 'Salida';
+  guardarRegistros(regs);
+  mostrarRegistros(regs);
+  // Se ELIMINÓ la auto-exportación para que NO descargue automáticamente
+}
+
+// clear all (requiere admin)
+clearAllBtn.addEventListener('click', ()=>{
+  pedirAdmin((ok)=>{
+    if(!ok){ alert('Código admin incorrecto.'); return; }
+    if(confirm('¿Seguro que quieres BORRAR TODOS los registros? Esta acción no se puede deshacer.')){
+      guardarRegistros([]); mostrarRegistros([]);
+      // Se ELIMINÓ la auto-exportación para que NO descargue automáticamente
+    }
+  });
+});
+
+// pedir admin con modal y callback
+function pedirAdmin(callback){
+  adminCallback = callback;
+  adminCodeInput.value = '';
+  adminModal.classList.add('active');
+  adminCodeInput.focus();
+}
+adminCancelBtn.addEventListener('click', ()=>{ adminModal.classList.remove('active'); if(adminCallback) adminCallback(false); adminCallback=null; });
+adminAcceptBtn.addEventListener('click', ()=>{
+  const v = adminCodeInput.value.trim();
+  const ok = (v === ADMIN_CODE);
+  adminModal.classList.remove('active');
+  if(adminCallback) adminCallback(ok);
+  adminCallback = null;
+});
+// permitir ejecutar con Enter
+adminCodeInput.addEventListener('keydown', (ev)=>{ if(ev.key === 'Enter') adminAcceptBtn.click(); });
+
+// eventos de agregar
+entradaBtn.addEventListener('click', ()=>{
+  agregarRegistro(codigoInput.value.trim(), 'Entrada', obsInput.value.trim()); 
+  obsInput.value=''; codigoInput.value=''; actualizarBotones();
+});
+salidaBtn.addEventListener('click', ()=>{
+  agregarRegistro(codigoInput.value.trim(), 'Salida', obsInput.value.trim()); 
+  obsInput.value=''; codigoInput.value=''; actualizarBotones();
+});
+
+// búsqueda
+searchInput.addEventListener('input', ()=>{
+  const t = searchInput.value.trim().toLowerCase();
+  const regs = cargarRegistros();
+  if(!t) mostrarRegistros(regs);
+  else mostrarRegistros(regs.filter(r => r.codigo.includes(t) || r.fecha.includes(t)));
+});
+
+// exportar manual
+exportBtn.addEventListener('click', ()=>{ exportAll(); });
+
+// exportar todo manualmente (sin alertas al registrar)
+function exportAll(){
+  const regs = cargarRegistros();
+  if(regs.length === 0){ alert('No hay registros para exportar.'); return; }
+  if(window.XLSX){
+    try{
+      const wb = XLSX.utils.book_new();
+      const wsData = [['Código','Tipo','Fecha','Hora','Observaciones']];
+      regs.forEach(r=> wsData.push([r.codigo,r.tipo,r.fecha,r.hora,r.observacion]));
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+      XLSX.utils.book_append_sheet(wb, ws, 'Registros');
+      XLSX.writeFile(wb, `registro_entradas_salidas_${new Date().toISOString().slice(0,10)}.xlsx`);
+      return;
+    }catch(e){ console.warn('Error export XLSX', e); }
+  }
+  // fallback CSV
+  const encabezados = ['Código','Tipo','Fecha','Hora','Observaciones'];
+  const filas = regs.map(r => [r.codigo,r.tipo,r.fecha,r.hora,`"${(r.observacion||'').replace(/"/g,'""').replace(/\r?\n/g,' ')}"`].join(','));
+  const csv = [encabezados.join(','), ...filas].join('\r\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = `registro_entradas_salidas_${new Date().toISOString().slice(0,10)}.csv`; a.click(); URL.revokeObjectURL(url);
+}
+
+// --- utilidad para cargar SheetJS si hay internet disponible ---
+(function loadXLSXIfOnline(){
+  const script = document.createElement('script');
+  script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+  script.onload = ()=> console.log('SheetJS cargado: XLSX export disponible.');
+  script.onerror = ()=> console.log('No se pudo cargar SheetJS; se usará CSV como fallback.');
+  document.head.appendChild(script);
+})();
+
+// mostrar al cargar
+mostrarRegistros(cargarRegistros());
+
+</script>
+</body>
+</html>
